@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>SysMon Dashboard</title>
+<style>
+  :root { --bg:#0b1220; --card:#11192b; --fg:#e6edf6; --muted:#9fb0c3; --ok:#29b36b; --warn:#f0b429; --bad:#e5534b; }
+  html,body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.4 system-ui,Segoe UI,Roboto,Ubuntu,sans-serif}
+  .wrap{max-width:980px;margin:24px auto;padding:0 16px}
+  .row{display:flex;gap:16px;flex-wrap:wrap}
+  .card{background:var(--card);border-radius:14px;box-shadow:0 6px 20px rgba(0,0,0,.25);padding:16px;flex:1}
+  .metrics{display:flex;gap:16px;flex-wrap:wrap}
+  .metric{background:#0f1730;padding:12px 14px;border-radius:12px;min-width:180px}
+  .label{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+  .value{font-size:24px;margin-top:6px;font-weight:700}
+  .status{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;margin-left:8px}
+  .ok{background:rgba(41,179,107,.16);color:var(--ok)}
+  .warn{background:rgba(240,180,41,.16);color:var(--warn)}
+  .bad{background:rgba(229,83,75,.16);color:var(--bad)}
+  table{width:100%;border-collapse:collapse;margin-top:10px}
+  th,td{padding:10px 8px;border-bottom:1px solid rgba(255,255,255,.06)}
+  th{color:var(--muted);text-align:left;font-weight:600}
+  tr:hover{background:rgba(255,255,255,.03)}
+  .right{text-align:right}
+  .footer{color:var(--muted);opacity:.8;margin-top:10px}
+  a{color:#79c0ff;text-decoration:none}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h2>System Monitor — Web Dashboard</h2>
+    <div class="row">
+      <div class="card">
+        <div class="metrics">
+          <div class="metric">
+            <div class="label">CPU Total</div>
+            <div class="value" id="cpu">– % <span id="cpuState" class="status ok">idle</span></div>
+          </div>
+          <div class="metric">
+            <div class="label">Memory Used</div>
+            <div class="value"><span id="memUsed">–</span> / <span id="memTotal">–</span> GB</div>
+          </div>
+          <div class="metric">
+            <div class="label">Processes</div>
+            <div class="value" id="procs">–</div>
+          </div>
+          <div class="metric">
+            <div class="label">API</div>
+            <div class="value"><code>http://127.0.0.1:8080</code></div>
+          </div>
+        </div>
+        <div class="footer">Auto-refreshes every 1s. Keep <code>sysmon --api</code> running.</div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="card">
+        <div class="label">Top Processes</div>
+        <table>
+          <thead>
+            <tr><th>PID</th><th>Name</th><th class="right">CPU %</th><th class="right">Mem (MB)</th></tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="footer">Tip: In another tab run <code>yes &gt; /dev/null</code> to see CPU change.</div>
+  </div>
+
+<script>
+const $ = (id)=>document.getElementById(id);
+function statusBadge(el, value){
+  el.classList.remove('ok','warn','bad');
+  if(value < 40) el.classList.add('ok'), el.textContent='idle';
+  else if(value < 80) el.classList.add('warn'), el.textContent='busy';
+  else el.classList.add('bad'), el.textContent='hot';
+}
+async function fetchJSON(url){
+  const r = await fetch(url, {cache:'no-store'});
+  if(!r.ok) throw new Error(r.status+' '+r.statusText);
+  return r.json();
+}
+async function refresh(){
+  try{
+    const [m, p] = await Promise.all([
+      fetchJSON('http://127.0.0.1:8080/api/metrics'),
+      fetchJSON('http://127.0.0.1:8080/api/procs')
+    ]);
+    // metrics
+    const cpu = (m.cpu_total ?? 0).toFixed(1);
+    $('cpu').firstChild.nodeValue = cpu + ' % ';
+    statusBadge($('cpuState'), parseFloat(cpu));
+    $('memUsed').textContent = (m.mem_used_gb ?? 0).toFixed(2);
+    $('memTotal').textContent = (m.mem_total_gb ?? 0).toFixed(2);
+    $('procs').textContent   = (m.processes ?? 0);
+
+    // table
+    const tb = $('tbody'); tb.innerHTML='';
+    const list = (p.top_processes || []).slice(0, 50);
+    for(const row of list){
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${row.pid}</td>
+        <td>${row.name}</td>
+        <td class="right">${(row.cpu ?? 0).toFixed(1)}</td>
+        <td class="right">${(row.mem_mb ?? 0).toFixed(2)}</td>
+      `;
+      tb.appendChild(tr);
+    }
+  }catch(e){
+    console.error(e);
+  }
+}
+setInterval(refresh, 1000);
+refresh();
+</script>
+</body>
+</html>
